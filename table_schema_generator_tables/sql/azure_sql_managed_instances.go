@@ -3,6 +3,7 @@ package sql
 import (
 	"context"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/sql/armsql"
 	"github.com/selefra/selefra-provider-azure/azure_client"
 	"github.com/selefra/selefra-provider-azure/table_schema_generator"
 	"github.com/selefra/selefra-provider-sdk/provider/schema"
@@ -27,97 +28,62 @@ func (x *TableAzureSqlManagedInstancesGenerator) GetVersion() uint64 {
 }
 
 func (x *TableAzureSqlManagedInstancesGenerator) GetOptions() *schema.TableOptions {
-	return &schema.TableOptions{
-		PrimaryKeys: []string{
-			"id",
-		},
-	}
+	return &schema.TableOptions{}
 }
 
 func (x *TableAzureSqlManagedInstancesGenerator) GetDataSource() *schema.DataSource {
 	return &schema.DataSource{
 		Pull: func(ctx context.Context, clientMeta *schema.ClientMeta, client any, task *schema.DataSourcePullTask, resultChannel chan<- any) *schema.Diagnostics {
-			svc := client.(*azure_client.Client).AzureServices().SQL.ManagedInstances
-
-			response, err := svc.List(ctx)
-
+			cl := client.(*azure_client.Client)
+			svc, err := armsql.NewManagedInstancesClient(cl.SubscriptionId, cl.Creds, cl.Options)
 			if err != nil {
 				return schema.NewDiagnosticsErrorPullTable(task.Table, err)
 
 			}
-
-			for response.NotDone() {
-				resultChannel <- response.Values()
-				if err := response.NextWithContext(ctx); err != nil {
+			pager := svc.NewListPager(nil)
+			for pager.More() {
+				p, err := pager.NextPage(ctx)
+				if err != nil {
 					return schema.NewDiagnosticsErrorPullTable(task.Table, err)
 
 				}
+				resultChannel <- p.Value
 			}
-
 			return nil
 		},
 	}
 }
 
 func (x *TableAzureSqlManagedInstancesGenerator) GetExpandClientTask() func(ctx context.Context, clientMeta *schema.ClientMeta, client any, task *schema.DataSourcePullTask) []*schema.ClientTaskContext {
-	return azure_client.ExpandSubscription()
+	return azure_client.ExpandSubscriptionMultiplexRegisteredNamespace("azure_sql_managed_instances", azure_client.Namespacemicrosoft_sql)
 }
 
 func (x *TableAzureSqlManagedInstancesGenerator) GetColumns() []*schema.Column {
 	return []*schema.Column{
-		table_schema_generator.NewColumnBuilder().ColumnName("provisioning_state").ColumnType(schema.ColumnTypeString).Build(),
-		table_schema_generator.NewColumnBuilder().ColumnName("administrator_login_password").ColumnType(schema.ColumnTypeString).Build(),
-		table_schema_generator.NewColumnBuilder().ColumnName("v_cores").ColumnType(schema.ColumnTypeInt).Build(),
-		table_schema_generator.NewColumnBuilder().ColumnName("restore_point_in_time").ColumnType(schema.ColumnTypeTimestamp).
-			Extractor(azure_client.ExtractorAzureDateTime("RestorePointInTime")).Build(),
+		table_schema_generator.NewColumnBuilder().ColumnName("properties").ColumnType(schema.ColumnTypeJSON).
+			Extractor(column_value_extractor.StructSelector("Properties")).Build(),
+		table_schema_generator.NewColumnBuilder().ColumnName("sku").ColumnType(schema.ColumnTypeJSON).
+			Extractor(column_value_extractor.StructSelector("SKU")).Build(),
 		table_schema_generator.NewColumnBuilder().ColumnName("id").ColumnType(schema.ColumnTypeString).
 			Extractor(column_value_extractor.StructSelector("ID")).Build(),
-		table_schema_generator.NewColumnBuilder().ColumnName("name").ColumnType(schema.ColumnTypeString).Build(),
-		table_schema_generator.NewColumnBuilder().ColumnName("selefra_id").ColumnType(schema.ColumnTypeString).SetUnique().Description("primary keys value md5").
-			Extractor(column_value_extractor.PrimaryKeysID()).Build(),
-		table_schema_generator.NewColumnBuilder().ColumnName("collation").ColumnType(schema.ColumnTypeString).Build(),
-		table_schema_generator.NewColumnBuilder().ColumnName("dns_zone_partner").ColumnType(schema.ColumnTypeString).
-			Extractor(column_value_extractor.StructSelector("DNSZonePartner")).Build(),
-		table_schema_generator.NewColumnBuilder().ColumnName("private_endpoint_connections").ColumnType(schema.ColumnTypeJSON).Build(),
-		table_schema_generator.NewColumnBuilder().ColumnName("zone_redundant").ColumnType(schema.ColumnTypeBool).Build(),
-		table_schema_generator.NewColumnBuilder().ColumnName("type").ColumnType(schema.ColumnTypeString).Build(),
-		table_schema_generator.NewColumnBuilder().ColumnName("subnet_id").ColumnType(schema.ColumnTypeString).
-			Extractor(column_value_extractor.StructSelector("SubnetID")).Build(),
-		table_schema_generator.NewColumnBuilder().ColumnName("license_type").ColumnType(schema.ColumnTypeString).Build(),
-		table_schema_generator.NewColumnBuilder().ColumnName("dns_zone").ColumnType(schema.ColumnTypeString).
-			Extractor(column_value_extractor.StructSelector("DNSZone")).Build(),
-		table_schema_generator.NewColumnBuilder().ColumnName("public_data_endpoint_enabled").ColumnType(schema.ColumnTypeBool).Build(),
-		table_schema_generator.NewColumnBuilder().ColumnName("tags").ColumnType(schema.ColumnTypeJSON).Build(),
-		table_schema_generator.NewColumnBuilder().ColumnName("administrator_login").ColumnType(schema.ColumnTypeString).Build(),
-		table_schema_generator.NewColumnBuilder().ColumnName("instance_pool_id").ColumnType(schema.ColumnTypeString).
-			Extractor(column_value_extractor.StructSelector("InstancePoolID")).Build(),
-		table_schema_generator.NewColumnBuilder().ColumnName("minimal_tls_version").ColumnType(schema.ColumnTypeString).
-			Extractor(column_value_extractor.StructSelector("MinimalTLSVersion")).Build(),
-		table_schema_generator.NewColumnBuilder().ColumnName("subscription_id").ColumnType(schema.ColumnTypeString).
-			Extractor(azure_client.ExtractorAzureSubscription()).Build(),
-		table_schema_generator.NewColumnBuilder().ColumnName("state").ColumnType(schema.ColumnTypeString).Build(),
-		table_schema_generator.NewColumnBuilder().ColumnName("timezone_id").ColumnType(schema.ColumnTypeString).
-			Extractor(column_value_extractor.StructSelector("TimezoneID")).Build(),
-		table_schema_generator.NewColumnBuilder().ColumnName("location").ColumnType(schema.ColumnTypeString).Build(),
-		table_schema_generator.NewColumnBuilder().ColumnName("identity").ColumnType(schema.ColumnTypeJSON).Build(),
-		table_schema_generator.NewColumnBuilder().ColumnName("sku").ColumnType(schema.ColumnTypeJSON).Build(),
-		table_schema_generator.NewColumnBuilder().ColumnName("storage_account_type").ColumnType(schema.ColumnTypeString).Build(),
-		table_schema_generator.NewColumnBuilder().ColumnName("managed_instance_create_mode").ColumnType(schema.ColumnTypeString).Build(),
-		table_schema_generator.NewColumnBuilder().ColumnName("fully_qualified_domain_name").ColumnType(schema.ColumnTypeString).Build(),
-		table_schema_generator.NewColumnBuilder().ColumnName("storage_size_in_gb").ColumnType(schema.ColumnTypeInt).
-			Extractor(column_value_extractor.StructSelector("StorageSizeInGB")).Build(),
-		table_schema_generator.NewColumnBuilder().ColumnName("source_managed_instance_id").ColumnType(schema.ColumnTypeString).
-			Extractor(column_value_extractor.StructSelector("SourceManagedInstanceID")).Build(),
-		table_schema_generator.NewColumnBuilder().ColumnName("proxy_override").ColumnType(schema.ColumnTypeString).Build(),
-		table_schema_generator.NewColumnBuilder().ColumnName("maintenance_configuration_id").ColumnType(schema.ColumnTypeString).
-			Extractor(column_value_extractor.StructSelector("MaintenanceConfigurationID")).Build(),
+		table_schema_generator.NewColumnBuilder().ColumnName("selefra_id").ColumnType(schema.ColumnTypeString).SetUnique().Description("random id").
+			Extractor(column_value_extractor.UUID()).Build(),
+		table_schema_generator.NewColumnBuilder().ColumnName("location").ColumnType(schema.ColumnTypeString).
+			Extractor(column_value_extractor.StructSelector("Location")).Build(),
+		table_schema_generator.NewColumnBuilder().ColumnName("identity").ColumnType(schema.ColumnTypeJSON).
+			Extractor(column_value_extractor.StructSelector("Identity")).Build(),
+		table_schema_generator.NewColumnBuilder().ColumnName("tags").ColumnType(schema.ColumnTypeJSON).
+			Extractor(column_value_extractor.StructSelector("Tags")).Build(),
+		table_schema_generator.NewColumnBuilder().ColumnName("name").ColumnType(schema.ColumnTypeString).
+			Extractor(column_value_extractor.StructSelector("Name")).Build(),
+		table_schema_generator.NewColumnBuilder().ColumnName("type").ColumnType(schema.ColumnTypeString).
+			Extractor(column_value_extractor.StructSelector("Type")).Build(),
 	}
 }
 
 func (x *TableAzureSqlManagedInstancesGenerator) GetSubTables() []*schema.Table {
 	return []*schema.Table{
-		table_schema_generator.GenTableSchema(&TableAzureSqlManagedDatabasesGenerator{}),
-		table_schema_generator.GenTableSchema(&TableAzureSqlManagedInstanceVulnerabilityAssessmentsGenerator{}),
 		table_schema_generator.GenTableSchema(&TableAzureSqlManagedInstanceEncryptionProtectorsGenerator{}),
+		table_schema_generator.GenTableSchema(&TableAzureSqlManagedInstanceVulnerabilityAssessmentsGenerator{}),
 	}
 }

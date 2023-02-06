@@ -10,7 +10,7 @@ import (
 	"github.com/selefra/selefra-provider-azure/azure_client"
 )
 
-const Version = "v0.0.1"
+const Version = "v0.0.5"
 
 func GetProvider() *provider.Provider {
 	return &provider.Provider{

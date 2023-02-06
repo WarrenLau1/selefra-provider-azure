@@ -1,10 +1,18 @@
 package azure_client
 
-import (
-	"context"
+import "context"
+import "github.com/selefra/selefra-provider-sdk/provider/schema"
 
-	"github.com/selefra/selefra-provider-sdk/provider/schema"
-)
+func ExpandSubscription() func(ctx context.Context, clientMeta *schema.ClientMeta, client any, task *schema.DataSourcePullTask) []*schema.ClientTaskContext {
+	return func(ctx context.Context, clientMeta *schema.ClientMeta, client any, task *schema.DataSourcePullTask) []*schema.ClientTaskContext {
+		c := client.(*Client)
+		var cs = make([]*schema.ClientTaskContext, 0)
+		for _, subID := range c.subscriptions {
+			cs = append(cs, &schema.ClientTaskContext{Client: c.withSubscription(subID)})
+		}
+		return cs
+	}
+}
 
 func ExpandSingleSubscription() func(ctx context.Context, clientMeta *schema.ClientMeta, client any, task *schema.DataSourcePullTask) []*schema.ClientTaskContext {
 	return func(ctx context.Context, clientMeta *schema.ClientMeta, client any, task *schema.DataSourcePullTask) []*schema.ClientTaskContext {
@@ -18,12 +26,22 @@ func ExpandSingleSubscription() func(ctx context.Context, clientMeta *schema.Cli
 	}
 }
 
-func ExpandSubscription() func(ctx context.Context, clientMeta *schema.ClientMeta, client any, task *schema.DataSourcePullTask) []*schema.ClientTaskContext {
+func ExpandSubscriptionMultiplexRegisteredNamespace(table, namespace string) func(ctx context.Context, clientMeta *schema.ClientMeta, client any, task *schema.DataSourcePullTask) []*schema.ClientTaskContext {
+	//return func(ctx context.Context, clientMeta *schema.ClientMeta, client any, task *schema.DataSourcePullTask) []*schema.ClientTaskContext {
+	//	c := client.(*Client)
+	//	var cs = make([]*schema.ClientTaskContext, 0)
+	//	for _, subId := range c.subscriptions {
+	//		if _, ok := c.registeredNamespaces[subId][namespace]; ok {
+	//			cs = append(cs, &schema.ClientTaskContext{Client: c.withSubscription(subId)})
+	//		}
+	//	}
+	//	return cs
+	//}
 	return func(ctx context.Context, clientMeta *schema.ClientMeta, client any, task *schema.DataSourcePullTask) []*schema.ClientTaskContext {
 		c := client.(*Client)
-		var cs = make([]*schema.ClientTaskContext, len(c.subscriptions))
-		for i, subID := range c.subscriptions {
-			cs[i] = &schema.ClientTaskContext{Client: c.withSubscription(subID)}
+		var cs = make([]*schema.ClientTaskContext, 0)
+		for _, subID := range c.subscriptions {
+			cs = append(cs, &schema.ClientTaskContext{Client: c.withSubscription(subID)})
 		}
 		return cs
 	}

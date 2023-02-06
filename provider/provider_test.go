@@ -2,6 +2,7 @@ package provider
 
 import (
 	"context"
+	"os"
 	"testing"
 
 	"github.com/selefra/selefra-provider-sdk/env"
@@ -15,7 +16,7 @@ import (
 
 func TestProvider_PullTable(t *testing.T) {
 	wk := "."
-	config := `provider:`
+	config := ``
 	myProvider := GetProvider()
 	Pull(myProvider, config, wk, "*")
 }

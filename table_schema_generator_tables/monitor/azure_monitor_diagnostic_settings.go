@@ -2,11 +2,11 @@ package monitor
 
 import (
 	"context"
+	"errors"
 
-	"github.com/Azure/azure-sdk-for-go/services/preview/monitor/mgmt/2021-07-01-preview/insights"
-	"github.com/Azure/azure-sdk-for-go/services/resources/mgmt/2020-10-01/resources"
-	"github.com/Azure/go-autorest/autorest/azure"
-	"github.com/pkg/errors"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/monitor/armmonitor"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/selefra/selefra-provider-azure/azure_client"
 	"github.com/selefra/selefra-provider-azure/table_schema_generator"
 	"github.com/selefra/selefra-provider-sdk/provider/schema"
@@ -31,34 +31,48 @@ func (x *TableAzureMonitorDiagnosticSettingsGenerator) GetVersion() uint64 {
 }
 
 func (x *TableAzureMonitorDiagnosticSettingsGenerator) GetOptions() *schema.TableOptions {
-	return &schema.TableOptions{
-		PrimaryKeys: []string{
-			"id",
-		},
-	}
+	return &schema.TableOptions{}
 }
 
 func (x *TableAzureMonitorDiagnosticSettingsGenerator) GetDataSource() *schema.DataSource {
 	return &schema.DataSource{
 		Pull: func(ctx context.Context, clientMeta *schema.ClientMeta, client any, task *schema.DataSourcePullTask, resultChannel chan<- any) *schema.Diagnostics {
-			svc := client.(*azure_client.Client).AzureServices().Monitor.DiagnosticSettings
-
-			resource := task.ParentRawResult.(resources.GenericResourceExpanded)
-			response, err := svc.List(ctx, *resource.ID)
+			cl := client.(*azure_client.Client)
+			svc, err := armresources.NewClient(cl.SubscriptionId, cl.Creds, cl.Options)
 			if err != nil {
-				if isResourceTypeNotSupported(err) {
-					return nil
-				}
 				return schema.NewDiagnosticsErrorPullTable(task.Table, err)
 
 			}
-			if response.Value == nil {
-				return nil
-			}
-			for _, v := range *response.Value {
-				resultChannel <- diagnosticSettingResource{
-					DiagnosticSettingsResource: v,
-					ResourceURI:                *resource.ID,
+			pager := svc.NewListPager(nil)
+			for pager.More() {
+				p, err := pager.NextPage(ctx)
+				if err != nil {
+					return schema.NewDiagnosticsErrorPullTable(task.Table, err)
+
+				}
+				for _, r := range p.Value {
+					svc, err := armmonitor.NewDiagnosticSettingsClient(cl.Creds, cl.Options)
+					if err != nil {
+						return schema.NewDiagnosticsErrorPullTable(task.Table, err)
+
+					}
+					pager := svc.NewListPager(*r.ID, nil)
+					for pager.More() {
+						p, err := pager.NextPage(ctx)
+						if err != nil {
+							if isResourceTypeNotSupported(err) {
+								break
+							}
+							return schema.NewDiagnosticsErrorPullTable(task.Table, err)
+
+						}
+						for _, ds := range p.Value {
+							resultChannel <- diagnosticSettingsWrapper{
+								ds,
+								*r.ID,
+							}
+						}
+					}
 				}
 			}
 			return nil
@@ -66,51 +80,31 @@ func (x *TableAzureMonitorDiagnosticSettingsGenerator) GetDataSource() *schema.D
 	}
 }
 
-type diagnosticSettingResource struct {
-	insights.DiagnosticSettingsResource
-	ResourceURI string
+type diagnosticSettingsWrapper struct {
+	*armmonitor.DiagnosticSettingsResource
+	ResourceId string
 }
 
 func isResourceTypeNotSupported(err error) bool {
-	var azureErr *azure.RequestError
+	var azureErr *azcore.ResponseError
 	if errors.As(err, &azureErr) {
-		return azureErr.ServiceError != nil && azureErr.ServiceError.Code == "ResourceTypeNotSupported"
+		return azureErr != nil && azureErr.ErrorCode == "ResourceTypeNotSupported"
 	}
 	return false
 }
 
 func (x *TableAzureMonitorDiagnosticSettingsGenerator) GetExpandClientTask() func(ctx context.Context, clientMeta *schema.ClientMeta, client any, task *schema.DataSourcePullTask) []*schema.ClientTaskContext {
-	return nil
+	return azure_client.ExpandSubscriptionMultiplexRegisteredNamespace("azure_monitor_diagnostic_settings", azure_client.Namespacemicrosoft_insights)
 }
 
 func (x *TableAzureMonitorDiagnosticSettingsGenerator) GetColumns() []*schema.Column {
 	return []*schema.Column{
-		table_schema_generator.NewColumnBuilder().ColumnName("metrics").ColumnType(schema.ColumnTypeJSON).Build(),
-		table_schema_generator.NewColumnBuilder().ColumnName("workspace_id").ColumnType(schema.ColumnTypeString).
-			Extractor(column_value_extractor.StructSelector("WorkspaceID")).Build(),
-		table_schema_generator.NewColumnBuilder().ColumnName("name").ColumnType(schema.ColumnTypeString).Build(),
-		table_schema_generator.NewColumnBuilder().ColumnName("type").ColumnType(schema.ColumnTypeString).Build(),
-		table_schema_generator.NewColumnBuilder().ColumnName("subscription_id").ColumnType(schema.ColumnTypeString).
-			Extractor(azure_client.ExtractorAzureSubscription()).Build(),
-		table_schema_generator.NewColumnBuilder().ColumnName("monitor_resource_id").ColumnType(schema.ColumnTypeString).
-			Extractor(column_value_extractor.ParentColumnValue("id")).Build(),
-		table_schema_generator.NewColumnBuilder().ColumnName("service_bus_rule_id").ColumnType(schema.ColumnTypeString).
-			Extractor(column_value_extractor.StructSelector("ServiceBusRuleID")).Build(),
-		table_schema_generator.NewColumnBuilder().ColumnName("event_hub_authorization_rule_id").ColumnType(schema.ColumnTypeString).
-			Extractor(column_value_extractor.StructSelector("EventHubAuthorizationRuleID")).Build(),
-		table_schema_generator.NewColumnBuilder().ColumnName("log_analytics_destination_type").ColumnType(schema.ColumnTypeString).Build(),
-		table_schema_generator.NewColumnBuilder().ColumnName("resource_uri").ColumnType(schema.ColumnTypeString).
-			Extractor(column_value_extractor.StructSelector("ResourceURI")).Build(),
-		table_schema_generator.NewColumnBuilder().ColumnName("storage_account_id").ColumnType(schema.ColumnTypeString).
-			Extractor(column_value_extractor.StructSelector("StorageAccountID")).Build(),
-		table_schema_generator.NewColumnBuilder().ColumnName("id").ColumnType(schema.ColumnTypeString).
-			Extractor(column_value_extractor.StructSelector("ID")).Build(),
-		table_schema_generator.NewColumnBuilder().ColumnName("selefra_id").ColumnType(schema.ColumnTypeString).SetUnique().Description("primary keys value md5").
-			Extractor(column_value_extractor.PrimaryKeysID()).Build(),
-		table_schema_generator.NewColumnBuilder().ColumnName("event_hub_name").ColumnType(schema.ColumnTypeString).Build(),
-		table_schema_generator.NewColumnBuilder().ColumnName("logs").ColumnType(schema.ColumnTypeJSON).Build(),
-		table_schema_generator.NewColumnBuilder().ColumnName("azure_monitor_resources_selefra_id").ColumnType(schema.ColumnTypeString).SetNotNull().Description("fk to azure_monitor_resources.selefra_id").
-			Extractor(column_value_extractor.ParentColumnValue("selefra_id")).Build(),
+		table_schema_generator.NewColumnBuilder().ColumnName("diagnostic_settings_resource").ColumnType(schema.ColumnTypeJSON).
+			Extractor(column_value_extractor.StructSelector("DiagnosticSettingsResource")).Build(),
+		table_schema_generator.NewColumnBuilder().ColumnName("resource_id").ColumnType(schema.ColumnTypeString).
+			Extractor(column_value_extractor.StructSelector("ResourceId")).Build(),
+		table_schema_generator.NewColumnBuilder().ColumnName("selefra_id").ColumnType(schema.ColumnTypeString).SetUnique().Description("random id").
+			Extractor(column_value_extractor.UUID()).Build(),
 	}
 }
 
