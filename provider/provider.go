@@ -50,16 +50,11 @@ func GetProvider() *provider.Provider {
 		},
 		ConfigMeta: provider.ConfigMeta{
 			GetDefaultConfigTemplate: func(ctx context.Context) string {
-				return `##  Optional, Repeated. Add an accounts block for every account you want to assume-role into and fetch data from.
-#accounts:
-#  - subscriptions: # Optional, Specify the ID of the target subscription.
-#      - <subscription id>
-#    tenant_id: <tenant_id> # Required, specify the Azure Active Directory tenant(directory) ID to be authenticated.
-#    client_id: <client_id> # Required, specify the client(application) ID in the tenant for authentication.
-#    client_secret: <client_secret> # Required, specify a client secret that was generated for an app registration.
-#
-#    from_file: <from_file> # Optional, pass location of authorization file. This file comprises credentials, subscription_id, and base_url.
-#    resource_base_uri: <resource_base_uri> # Optional, specify resource base url which can be found in the authorization file.`
+				return `# subscriptions:
+#   - <Your Azure subscriptions>	
+# tenant_id: <Your Azure tenant id>
+# client_id: <Your Azure client id>
+# client_secret: <Your Azure client secret>`
 			},
 			Validation: func(ctx context.Context, config *viper.Viper) *schema.Diagnostics {
 				var azureConfig azure_client.Config
